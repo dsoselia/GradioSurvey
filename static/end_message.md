@@ -1,0 +1,1 @@
+Thank you for participating in our study. If you would like to withdraw your data, please contact us and include your sesssion id.

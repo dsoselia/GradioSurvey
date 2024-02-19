@@ -1,0 +1,5 @@
+STATIC = "static"
+OUTPUT = "records"
+COLLECT_NAMES = True
+MAKE_PUBLIC = False
+QUESTIONS = 2

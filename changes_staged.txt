@@ -1,0 +1,270 @@
+diff --git a/main.py b/main.py
+new file mode 100644
+index 0000000..14a0780
+--- /dev/null
++++ b/main.py
+@@ -0,0 +1,76 @@
++# %%
++
++import gradio as gr
++import random
++import os
++import json
++from src.utils import update_interface, validate_consent
++from src.load_samples import get_samples
++
++STATIC = "static"
++OUTPUT = "records"
++COLLECT_NAMES = True
++MAKE_PUBLIC = False
++QUESTIONS = 2
++
++def get_file(name: str) -> str:
++    with open(os.path.join(STATIC, name), "r") as file:
++        return file.read()
++    
++
++# %%
++
++if not os.path.exists(OUTPUT):
++    os.makedirs(OUTPUT)
++
++
++# %%
++    
++consent_text = get_file("consent.md")
++question_prompt = get_file("question_prompt.md")
++end_message_text = get_file("end_message.md")
++# %%
++
++
++
++
++with gr.Blocks() as demo:
++    samples = get_samples()
++    user_id = gr.State("0")
++    end_message = gr.Markdown(end_message_text, visible=False)
++
++    with gr.Column(visible=False) as interface:
++
++        texts_counter = gr.State(0)
++        selected_prompt_index = gr.State(0)
++
++        id_label = gr.Label("Session ID: " + user_id.value)
++
++        progress_counter = gr.Markdown("Prompt: " + str(texts_counter.value))
++
++        text_prompt = gr.Markdown(question_prompt)
++        
++        text0 = gr.Textbox(value=samples[selected_prompt_index.value]["question"], label="Question", lines=7)
++        text1 = gr.Textbox(value=samples[selected_prompt_index.value]["baseline_answer"], label="Model A", lines=10)
++        text2 = gr.Textbox(value=samples[selected_prompt_index.value]["method_answer"], label="Model B" , lines=10)
++
++        radio = gr.Radio(["Answer 1 is better", "Answer 2 is better", "They are about the same"], label="Evaluation")
++
++        next_prompt = gr.Button("Next")
++        samples = gr.State(samples)
++        next_prompt.click(fn=update_interface, inputs=[samples, user_id, texts_counter, selected_prompt_index, radio], 
++                     outputs=[text0, text1, text2, texts_counter, selected_prompt_index, radio, interface, end_message, progress_counter])
++    
++    with gr.Column(visible=True) as consent:
++        consent_text = gr.Markdown(consent_text)
++        if COLLECT_NAMES:
++            name_textbox = gr.Textbox(placeholder="Your name")
++        else:
++            name_textbox = None
++        consent_checkbox = gr.Checkbox(label="I agree to participate in this study")
++        button_confirm  = gr.Button("Confirm")
++        button_confirm.click(fn=validate_consent, inputs= [name_textbox, consent_checkbox ], outputs=[interface, consent, user_id, id_label] )
++
++
++
++demo.launch(share=MAKE_PUBLIC)
+\ No newline at end of file
+diff --git a/requirements.py b/requirements.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/src/load_samples.py b/src/load_samples.py
+new file mode 100644
+index 0000000..98a2d80
+--- /dev/null
++++ b/src/load_samples.py
+@@ -0,0 +1,28 @@
++'''
++Modify to load actual samples
++'''
++
++
++samples = [
++    {
++        "id": "sample1",
++        "question": "What is the capital of France?",
++        "baseline_answer": "The capital of France is Paris.",
++        "method_answer": "Paris is the capital city of France."
++    },
++    {
++        "id": "sample2",
++        "question": "What causes rain?",
++        "baseline_answer": "Rain is caused by moisture condensing in the air.",
++        "method_answer": "When water vapor in the atmosphere cools and condenses, it falls as rain."
++    },
++    {
++        "id": "sample3",
++        "question": "Who wrote 'To Kill a Mockingbird'?",
++        "baseline_answer": "'To Kill a Mockingbird' was written by Harper Lee.",
++        "method_answer": "The author of 'To Kill a Mockingbird' is Harper Lee."
++    }
++]
++
++def get_samples():
++    return samples
+\ No newline at end of file
+diff --git a/src/utils.py b/src/utils.py
+new file mode 100644
+index 0000000..cf3a40a
+--- /dev/null
++++ b/src/utils.py
+@@ -0,0 +1,60 @@
++import os
++import gradio as gr
++import random
++import json
++
++
++STATIC = "static"
++OUTPUT = "records"
++COLLECT_NAMES = True
++MAKE_PUBLIC = False
++QUESTIONS = 2
++
++def update_interface(samples,  user_id, text_counter, selected_prompt_index, evaluation):
++    consent_visible = True
++    if text_counter >= QUESTIONS:
++        consent_visible = False
++    interface_visible = not consent_visible
++    selected_prompt = samples[selected_prompt_index]
++    baseline_text = selected_prompt["baseline_answer"]
++    method_text = selected_prompt["method_answer"]
++    question = selected_prompt["question"]
++    question_id = selected_prompt["id"]
++    file_path = os.path.join(OUTPUT, user_id + ".jsonl")
++    current_data = {
++        "user_id": user_id,
++        "text_counter": text_counter,
++        "baseline_text": baseline_text,
++        "method_text": method_text,
++        "evaluation": evaluation,
++        "selected_prompt_index": selected_prompt_index,
++        "question_id": question_id,
++        "question": question,
++    }
++    with open(file_path, "a") as f:
++        f.write(json.dumps(current_data) + "\n")
++
++    with open(file_path, "r") as f:
++        data = []
++        for line in f:
++            data.append(json.loads(line))
++    used_question_indicies = [d["selected_prompt_index"] for d in data]
++    unused_question_indicies = [i for i in range(len(samples)) if i not in used_question_indicies]
++    new_selected_prompt_index = random.choice(unused_question_indicies)
++    new_text_counter = text_counter + 1
++
++    question = samples[new_selected_prompt_index]["question"]
++    baseline_text = samples[new_selected_prompt_index]["baseline_answer"]
++    method_text = samples[new_selected_prompt_index]["method_answer"]
++    
++    return question, baseline_text, method_text, new_text_counter, new_selected_prompt_index, [], gr.update(visible=consent_visible), gr.update(visible=interface_visible), "Prompt: " + str(new_text_counter) + " / {}".format(QUESTIONS) 
++
++def validate_consent(name, consent_box):
++    random_id = str(random.randint(0, 1000000))
++    if COLLECT_NAMES:
++        # "all_ids.txt"
++        with open(os.path.join(OUTPUT, "all_ids.txt"), "a") as f:
++            f.write("User name: " + name + " ID: " + random_id + "\n")
++    if consent_box:
++        return gr.update(visible=True), gr.update(visible=False), random_id, "Session ID: {}".format(random_id) 
++    return gr.update(visible=False), gr.update(visible=True), random_id, "Session ID: {}".format(random_id)
+diff --git a/static/consent.md b/static/consent.md
+new file mode 100644
+index 0000000..b774b8d
+--- /dev/null
++++ b/static/consent.md
+@@ -0,0 +1,52 @@
++## CONSENT TO PARTICIPATE
++
++### Project Title
++**Title**
++
++### Purpose of the Study
++This research is being conducted by [PI]  at the University of Maryland, College Park. ...
++### Procedures
++
++Upon consenting to participate, you will be presented with pairs of text answers, each generated by different AI models in response to general questions. Your task is to evaluate which of the two answers is more helpful, or if they are equally helpful. The study will take approximately 30 minutes to complete and will be conducted entirely online.
++
++### Potential Risks and Discomforts
++There are no known significant risks associated with this study beyond those encountered in daily life.
++
++### Potential Benefits
++Your participation will offer insights into the effectiveness of AI models in generating coding solutions, potentially contributing to advancements in AI-assisted coding and development tools.
++
++### Confidentiality
++Any potential loss of confidentiality will be minimized by not storing any personally identifiable information. Furthermore, all responses will be securely stored in a database accessible only to authorized members of the research team.
++
++### Right to Withdraw and Questions
++Your participation in this research is completely voluntary. You may choose not to take part at all. If you decide to participate in this research, you may stop participating at any time. If you decide not to participate in this study or if you stop participating at any time, you will not be penalized or lose any benefits to which you otherwise qualify.
++
++If you decide to stop taking part in the study, if you have questions, concerns, or complaints, or if you need to report an injury related to the research, please contact the investigator and include the unique ID of your response session obtained at the start of the survey.
++
++**Name Surname**  
++8125 Paint Branch Dr, College Park, MD 20742  
++                    
++**Name Surname**
++8125 Paint Branch Dr, College Park, MD 20742
++
++**Name Surname**
++8125 Paint Branch Dr, College Park, MD 20742
++
++### Participant Rights
++If you have questions about your rights as a research participant or wish to report a research-related injury, please contact:
++
++**University of Maryland College Park**  
++**Institutional Review Board Office**  
++**1204 Marie Mount Hall**  
++**College Park, Maryland, 20742**  
++[E-mail: irb@umd.edu](mailto:irb@umd.edu)  
++**Telephone: 301-405-0678**
++
++For more information regarding participant rights, please visit:  
++[https://research.umd.edu/research-resources/research-compliance/institutional-review-board-irb/research-participants](https://research.umd.edu/research-resources/research-compliance/institutional-review-board-irb/research-participants)
++
++This research has been reviewed according to the University of Maryland, College Park IRB procedures for research involving human subjects.
++
++### Statement of Consent
++If you agree to participate, please accept below. This indicates that you have read this consent form or have had it read to you; your questions have been answered to your satisfaction and you voluntarily agree to participate in this research study.
++
+diff --git a/static/end_message.md b/static/end_message.md
+new file mode 100644
+index 0000000..7a00ef4
+--- /dev/null
++++ b/static/end_message.md
+@@ -0,0 +1 @@
++Thank you for participating in our study. If you would like to withdraw your data, please contact us and include your sesssion id.
+\ No newline at end of file
+diff --git a/static/question_prompt.md b/static/question_prompt.md
+new file mode 100644
+index 0000000..75fad95
+--- /dev/null
++++ b/static/question_prompt.md
+@@ -0,0 +1,11 @@
++# User Task Evaluation Guidelines: Relevance and Helpfulness
++
++Below are responses for the following question from two different models. Please evaluate which of the answers would be more helpful. If you think both answers are equally helpful, please select the last option.
++
++During your evaluation consider the following criteria to judge the more helpful response with.
++
++  
++- **Alignment with User's Intent**: Ensure the response directly addresses the user's question or task, interpreting underlying intentions when not explicitly stated. 
++-  **Clarity and Precision**: Responses should be easy to understand, avoiding unnecessary jargon and maintaining focus on the user's query. 
++-  **Directness and Relevance**: Keep the response strictly related to the task, avoiding unrelated information or tangents. 
++- **Efficiency and Brevity**: Provide comprehensive yet concise information, steering clear of repetitive or overly detailed content that does not enhance understanding.
